@@ -43,6 +43,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupPlaylistManagement();
   setupBackupManagement();
   setupAuthManagement();
+  initGoogleAuth();
   setupVoiceSearch();
   setupAccessibilityShortcuts();
   setupSidebarTabs();
@@ -195,6 +196,7 @@ function onPlayerError(event) {
 // --- STATE PERSISTENCE (LOCAL STORAGE & CLOUD) ---
 let authToken = localStorage.getItem('vibebox_token') || null;
 let loggedInUser = localStorage.getItem('vibebox_username') || null;
+let userAvatarUrl = localStorage.getItem('vibebox_avatar') || null;
 
 async function loadLibraryFromStorage() {
   const stored = localStorage.getItem('vibebox_library');
@@ -1797,6 +1799,7 @@ function setupAuthManagement() {
       usernameInput.value = '';
       passwordInput.value = '';
       authModal.style.display = 'flex';
+      renderGoogleButton();
       usernameInput.focus();
     }
   });
@@ -1834,10 +1837,16 @@ function setupAuthManagement() {
       } else {
         authToken = data.token;
         loggedInUser = data.username;
+        userAvatarUrl = data.avatar || null;
         library = data.library;
         
         localStorage.setItem('vibebox_token', authToken);
         localStorage.setItem('vibebox_username', loggedInUser);
+        if (userAvatarUrl) {
+          localStorage.setItem('vibebox_avatar', userAvatarUrl);
+        } else {
+          localStorage.removeItem('vibebox_avatar');
+        }
         localStorage.setItem('vibebox_library', JSON.stringify(library));
         
         authModal.style.display = 'none';
@@ -1852,6 +1861,85 @@ function setupAuthManagement() {
       errorMsg.style.display = 'block';
     }
   });
+}
+
+// --- GOOGLE OAUTH IDENTITY SERVICES ---
+function initGoogleAuth() {
+  if (window.google && window.google.accounts && window.google.accounts.id) {
+    try {
+      window.google.accounts.id.initialize({
+        client_id: window.GOOGLE_CLIENT_ID || '1047125345791-vibebox.apps.googleusercontent.com',
+        callback: handleGoogleCredentialResponse,
+        auto_select: false
+      });
+      renderGoogleButton();
+    } catch (err) {
+      console.error('Google Auth Init error:', err);
+    }
+  } else {
+    setTimeout(initGoogleAuth, 600);
+  }
+}
+
+function renderGoogleButton() {
+  const container = document.getElementById('google-signin-btn-container');
+  if (container && window.google && window.google.accounts && window.google.accounts.id) {
+    container.innerHTML = '';
+    window.google.accounts.id.renderButton(container, {
+      theme: 'filled_dark',
+      size: 'large',
+      width: 320,
+      shape: 'pill',
+      text: 'signin_with'
+    });
+  }
+}
+
+async function handleGoogleCredentialResponse(response) {
+  if (!response || !response.credential) return;
+  const errorMsg = document.getElementById('auth-error-msg');
+  const authModal = document.getElementById('auth-modal');
+  
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/google`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credential: response.credential })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      if (errorMsg) {
+        errorMsg.textContent = data.error || 'Google authentication failed.';
+        errorMsg.style.display = 'block';
+      }
+    } else {
+      authToken = data.token;
+      loggedInUser = data.username;
+      userAvatarUrl = data.avatar || null;
+      library = data.library || library;
+      
+      localStorage.setItem('vibebox_token', authToken);
+      localStorage.setItem('vibebox_username', loggedInUser);
+      if (userAvatarUrl) {
+        localStorage.setItem('vibebox_avatar', userAvatarUrl);
+      } else {
+        localStorage.removeItem('vibebox_avatar');
+      }
+      localStorage.setItem('vibebox_library', JSON.stringify(library));
+      
+      if (authModal) authModal.style.display = 'none';
+      updateAuthUI();
+      applySettingsAndTheme();
+      renderSidebarPlaylists();
+      renderHomeViewport();
+      alert(`Welcome, ${loggedInUser}! Signed in with Google.`);
+    }
+  } catch (err) {
+    if (errorMsg) {
+      errorMsg.textContent = 'Google login network error. Please try again.';
+      errorMsg.style.display = 'block';
+    }
+  }
 }
 
 function toggleAuthModalMode(registerMode) {
@@ -1876,9 +1964,14 @@ function toggleAuthModalMode(registerMode) {
 function updateAuthUI() {
   const avatar = document.getElementById('user-avatar-lbl');
   const userName = document.getElementById('user-name-lbl');
+  const storedAvatar = localStorage.getItem('vibebox_avatar') || userAvatarUrl;
   
   if (authToken && loggedInUser) {
-    avatar.textContent = loggedInUser.slice(0, 2).toUpperCase();
+    if (storedAvatar) {
+      avatar.innerHTML = `<img src="${escapeHtml(storedAvatar)}" alt="${escapeHtml(loggedInUser)}" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">`;
+    } else {
+      avatar.textContent = loggedInUser.slice(0, 2).toUpperCase();
+    }
     userName.textContent = loggedInUser;
   } else {
     avatar.textContent = 'VB';
@@ -1889,8 +1982,10 @@ function updateAuthUI() {
 function logoutUser() {
   authToken = null;
   loggedInUser = null;
+  userAvatarUrl = null;
   localStorage.removeItem('vibebox_token');
   localStorage.removeItem('vibebox_username');
+  localStorage.removeItem('vibebox_avatar');
   updateAuthUI();
   alert('Logged out successfully.');
 }

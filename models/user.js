@@ -27,7 +27,19 @@ const UserSchema = new mongoose.Schema({
   },
   password: {
     type: String,
-    required: true
+    required: false
+  },
+  googleId: {
+    type: String,
+    sparse: true
+  },
+  email: {
+    type: String,
+    default: ''
+  },
+  avatar: {
+    type: String,
+    default: ''
   },
   library: {
     likedSongs: { type: [SongSchema], default: [] },

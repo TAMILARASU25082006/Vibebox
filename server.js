@@ -7,6 +7,9 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
+const { OAuth2Client } = require('google-auth-library');
+const googleClient = new OAuth2Client();
+
 // Load Mongoose models
 const User = require('./models/user');
 const SharedPlaylist = require('./models/playlist');
@@ -214,10 +217,98 @@ app.post('/api/auth/login', async (req, res) => {
     }
     
     const token = jwt.sign({ id: user._id, username: user.username }, JWT_SECRET, { expiresIn: '30d' });
-    res.json({ token, username: user.username, library: user.library });
+    res.json({ token, username: user.username, avatar: user.avatar || '', library: user.library });
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ error: 'Internal server error.' });
+  }
+});
+
+// Google OAuth Login / Registration
+app.post('/api/auth/google', async (req, res) => {
+  const { credential, clientId } = req.body;
+  if (!credential) {
+    return res.status(400).json({ error: 'Google ID token credential is required.' });
+  }
+
+  try {
+    let payload;
+    try {
+      const ticket = await googleClient.verifyIdToken({
+        idToken: credential,
+        audience: clientId || undefined
+      });
+      payload = ticket.getPayload();
+    } catch (e) {
+      // Fallback: verify via Google tokeninfo HTTP endpoint if library audience check requires explicit client_id
+      const fetchRes = await new Promise((resolve) => {
+        https.get(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`, (gRes) => {
+          let body = '';
+          gRes.on('data', chunk => { body += chunk; });
+          gRes.on('end', () => resolve({ status: gRes.statusCode, body }));
+        }).on('error', () => resolve({ status: 500, body: '{}' }));
+      });
+      
+      if (fetchRes.status === 200) {
+        payload = JSON.parse(fetchRes.body);
+      } else {
+        throw e;
+      }
+    }
+
+    if (!payload || (!payload.sub && !payload.email)) {
+      return res.status(400).json({ error: 'Invalid Google credential token payload.' });
+    }
+
+    const googleId = payload.sub;
+    const email = payload.email ? payload.email.toLowerCase() : '';
+    const name = payload.name || payload.given_name || (email ? email.split('@')[0] : 'User');
+    const avatar = payload.picture || '';
+
+    // Find existing user by googleId, email, or username
+    let user = await User.findOne({
+      $or: [
+        { googleId: googleId },
+        ...(email ? [{ email: email }] : []),
+        { username: name.toLowerCase().replace(/\s+/g, '_') }
+      ]
+    });
+
+    if (!user) {
+      let username = name.toLowerCase().replace(/[^a-z0-9_]/g, '_').substring(0, 20);
+      if (username.length < 3) username = `user_${Math.floor(1000 + Math.random() * 9000)}`;
+      
+      let existingUsername = await User.findOne({ username });
+      if (existingUsername) {
+        username = `${username.substring(0, 14)}_${Math.floor(100 + Math.random() * 900)}`;
+      }
+
+      user = new User({
+        username,
+        googleId,
+        email,
+        avatar,
+        library: {
+          likedSongs: [],
+          playlists: [],
+          recentlyPlayed: [],
+          settings: { theme: 'green', showVideo: true, quality: 'highres' }
+        }
+      });
+      await user.save();
+    } else {
+      let modified = false;
+      if (!user.googleId) { user.googleId = googleId; modified = true; }
+      if (!user.email && email) { user.email = email; modified = true; }
+      if (avatar && user.avatar !== avatar) { user.avatar = avatar; modified = true; }
+      if (modified) await user.save();
+    }
+
+    const token = jwt.sign({ id: user._id, username: user.username, email: user.email }, JWT_SECRET, { expiresIn: '30d' });
+    res.json({ token, username: user.username, email: user.email, avatar: user.avatar, library: user.library });
+  } catch (err) {
+    console.error('Google OAuth Login error:', err);
+    res.status(400).json({ error: 'Failed to authenticate with Google: ' + err.message });
   }
 });
 

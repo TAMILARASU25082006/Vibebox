@@ -1,0 +1,6 @@
+# Robots.txt for VibeBox - Free Web Music Player
+User-agent: *
+Allow: /
+
+# Sitemap Location
+Sitemap: https://vibebox.vercel.app/sitemap.xml
