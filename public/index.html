@@ -130,6 +130,12 @@
               </a>
             </li>
             <li>
+              <a href="#" class="nav-item" id="nav-rooms">
+                <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+                <span>Listen Together</span>
+              </a>
+            </li>
+            <li>
               <a href="#" class="nav-item" id="nav-settings">
                 <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z"/></svg>
                 <span>Settings</span>
@@ -155,6 +161,7 @@
         <div class="library-chips">
           <button class="chip active" id="chip-all">Playlists</button>
           <button class="chip" id="nav-liked-chip">Liked Songs</button>
+          <button class="chip" id="chip-local">Local Files</button>
         </div>
         
         <div class="playlists-list" id="playlists-list-container">
@@ -226,7 +233,15 @@
         <section id="viewport-home" class="viewport active">
           <div class="hero-section">
             <h1 id="greeting-text">Good afternoon</h1>
-            <p class="hero-subtitle">Bypass background limitations. Play any song instantly.</p>
+            <p class="hero-subtitle">Stream unlimited music, launch Smart AI Radios, and sync with friends.</p>
+            <!-- Mood Radio Quick Mix Chips -->
+            <div class="mood-chips-container" style="display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap;">
+              <button class="mood-chip" data-mood="chill">🌿 Chill Beats</button>
+              <button class="mood-chip" data-mood="workout">⚡ Workout Energy</button>
+              <button class="mood-chip" data-mood="focus">🎯 Deep Focus</button>
+              <button class="mood-chip" data-mood="retro">🌃 80s Retro</button>
+              <button class="mood-chip" data-mood="party">🎉 Party Mix</button>
+            </div>
           </div>
           
           <div class="section-container">
@@ -389,6 +404,110 @@
           </div>
         </section>
         
+        <!-- LISTEN TOGETHER ROOMS VIEWPORT -->
+        <section id="viewport-rooms" class="viewport">
+          <div class="search-header-panel">
+            <h2>Live "Listen Together" Rooms</h2>
+            <p>Create a live room or join a friend's room to listen to music synchronously in real time.</p>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; padding: 20px;">
+            <!-- Create Room Card -->
+            <div class="settings-card" style="margin: 0;">
+              <h3>Create a Room</h3>
+              <p class="settings-desc">Host a live room and share your room code with friends.</p>
+              <div style="display: flex; gap: 10px; margin-top: 14px;">
+                <input type="text" id="create-room-name-input" placeholder="Room Name (e.g. Midnight Vibe)" style="flex:1; height: 40px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 8px; padding: 0 12px; color: #fff;">
+                <button class="btn-primary" id="create-room-submit-btn" style="height: 40px; padding: 0 16px;">Host Room</button>
+              </div>
+            </div>
+
+            <!-- Join Room Card -->
+            <div class="settings-card" style="margin: 0;">
+              <h3>Join Existing Room</h3>
+              <p class="settings-desc">Enter a 6-character room code (e.g. VB-123456) to sync playback.</p>
+              <div style="display: flex; gap: 10px; margin-top: 14px;">
+                <input type="text" id="join-room-code-input" placeholder="Room Code (e.g. VB-123456)" style="flex:1; height: 40px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 8px; padding: 0 12px; color: #fff; text-transform: uppercase;">
+                <button class="action-outline-btn" id="join-room-submit-btn" style="height: 40px; padding: 0 16px;">Join Session</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Active Room View (Hidden by default) -->
+          <div id="active-room-view" style="display: none; padding: 0 20px 20px 20px;">
+            <div class="settings-card" style="background: linear-gradient(135deg, rgba(29, 185, 84, 0.15), rgba(0,0,0,0.4)); border: 1px solid var(--accent-color);">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <span style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--accent-color); font-weight: 700;">ACTIVE LIVE ROOM</span>
+                  <h2 id="room-active-name" style="margin: 4px 0;">Room Name</h2>
+                  <p style="font-size: 13px; opacity: 0.8;">Host: <strong id="room-active-host">User</strong> • Code: <mark id="room-active-code" style="background: var(--accent-color); color: #000; padding: 2px 6px; border-radius: 4px; font-weight: 700; font-family: monospace;">VB-XXXXXX</mark></p>
+                </div>
+                <button class="action-outline-btn delete-btn" id="leave-room-btn">Leave Room</button>
+              </div>
+
+              <!-- Active Room Players & Chat -->
+              <div style="display: grid; grid-template-columns: 1fr 300px; gap: 20px; margin-top: 20px;">
+                <div style="background: rgba(0,0,0,0.3); border-radius: 12px; padding: 16px;">
+                  <h4 style="margin-top: 0;">Currently Playing in Sync</h4>
+                  <div id="room-now-playing-box" style="display: flex; align-items: center; gap: 16px; margin: 12px 0;">
+                    <p class="empty-state">Host hasn't started playing a song yet.</p>
+                  </div>
+                  <h4 style="margin-top: 16px; margin-bottom: 8px;">Active Listeners (<span id="room-listener-count">0</span>)</h4>
+                  <div id="room-listeners-list" style="display: flex; gap: 8px; flex-wrap: wrap;"></div>
+                </div>
+
+                <div style="background: rgba(0,0,0,0.3); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; height: 320px;">
+                  <h4 style="margin-top: 0; margin-bottom: 12px;">Live Room Chat</h4>
+                  <div id="room-chat-messages" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; font-size: 13px; padding-right: 4px;"></div>
+                  <div style="display: flex; gap: 8px; margin-top: 12px;">
+                    <input type="text" id="room-chat-input" placeholder="Type a message..." style="flex: 1; height: 36px; background: rgba(255,255,255,0.05); border: 1px solid var(--border-color); border-radius: 6px; padding: 0 10px; color: #fff;">
+                    <button class="btn-primary" id="room-chat-send-btn" style="height: 36px; padding: 0 12px; font-size: 13px;">Send</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- LOCAL AUDIO & OFFLINE CACHE VIEWPORT -->
+        <section id="viewport-local-files" class="viewport">
+          <div class="search-header-panel">
+            <h2>Local Files & Offline Cache</h2>
+            <p>Upload your local MP3/FLAC/WAV files to store them directly in browser IndexedDB for offline play.</p>
+          </div>
+
+          <div style="padding: 20px;">
+            <!-- Dropzone -->
+            <div id="local-dropzone" style="border: 2px dashed var(--accent-color); border-radius: 16px; padding: 40px 20px; text-align: center; background: rgba(255,255,255,0.02); cursor: pointer; transition: 0.2s; margin-bottom: 24px;">
+              <svg viewBox="0 0 24 24" width="48" height="48" style="color: var(--accent-color); opacity: 0.8; margin-bottom: 12px;"><path fill="currentColor" d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+              <h3>Drag & Drop audio files here</h3>
+              <p style="opacity: 0.7; font-size: 14px; margin-top: 6px;">Supports .mp3, .wav, .flac, .ogg, .m4a audio files</p>
+              <button class="btn-primary" id="browse-local-files-btn" style="margin-top: 14px; padding: 10px 24px;">Choose Audio Files</button>
+              <input type="file" id="local-file-input" accept="audio/*" multiple style="display: none;">
+            </div>
+
+            <div class="tracklist-container">
+              <table class="tracklist-table">
+                <thead>
+                  <tr>
+                    <th class="col-index">#</th>
+                    <th class="col-title">Local Track</th>
+                    <th class="col-artist">Size</th>
+                    <th class="col-duration">Type</th>
+                    <th class="col-actions"></th>
+                  </tr>
+                </thead>
+                <tbody id="local-songs-list">
+                  <!-- Injected local files -->
+                </tbody>
+              </table>
+              <div class="empty-state-list" id="local-songs-empty-state" style="display: none;">
+                <p>No local files stored in offline cache yet. Upload some audio tracks above!</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <!-- SETTINGS VIEWPORT -->
         <section id="viewport-settings" class="viewport">
           <div class="settings-header">
@@ -397,16 +516,43 @@
           </div>
           
           <div class="settings-card">
-            <h3>Visual Style</h3>
-            <p class="settings-desc">Application Theme Settings.</p>
-            <div class="theme-info-box">
-              <span class="color-dot spotify-green"></span> Standard Spotify Green Theme (Active Default)
+            <h3>Visual Style & Theme Palette</h3>
+            <p class="settings-desc">Select your favorite glassmorphic accent theme color.</p>
+            <div class="theme-options-grid" style="display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px;">
+              <button class="theme-option active" data-theme="green" style="background: rgba(29, 185, 84, 0.15); border: 1px solid #1db954; color: #fff; padding: 10px 16px; border-radius: 8px; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+                <span style="width: 12px; height: 12px; border-radius: 50%; background: #1db954; display: inline-block;"></span> Emerald Green
+              </button>
+              <button class="theme-option" data-theme="cyan" style="background: rgba(0, 242, 254, 0.15); border: 1px solid #00f2fe; color: #fff; padding: 10px 16px; border-radius: 8px; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+                <span style="width: 12px; height: 12px; border-radius: 50%; background: #00f2fe; display: inline-block;"></span> Neon Cyan
+              </button>
+              <button class="theme-option" data-theme="purple" style="background: rgba(168, 85, 247, 0.15); border: 1px solid #a855f7; color: #fff; padding: 10px 16px; border-radius: 8px; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+                <span style="width: 12px; height: 12px; border-radius: 50%; background: #a855f7; display: inline-block;"></span> Electric Purple
+              </button>
+              <button class="theme-option" data-theme="sunset" style="background: rgba(249, 115, 22, 0.15); border: 1px solid #f97316; color: #fff; padding: 10px 16px; border-radius: 8px; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+                <span style="width: 12px; height: 12px; border-radius: 50%; background: #f97316; display: inline-block;"></span> Sunset Gold
+              </button>
+              <button class="theme-option" data-theme="blue" style="background: rgba(59, 130, 246, 0.15); border: 1px solid #3b82f6; color: #fff; padding: 10px 16px; border-radius: 8px; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+                <span style="width: 12px; height: 12px; border-radius: 50%; background: #3b82f6; display: inline-block;"></span> Midnight Blue
+              </button>
+              <button class="theme-option" data-theme="pink" style="background: rgba(236, 72, 153, 0.15); border: 1px solid #ec4899; color: #fff; padding: 10px 16px; border-radius: 8px; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+                <span style="width: 12px; height: 12px; border-radius: 50%; background: #ec4899; display: inline-block;"></span> Rose Neon
+              </button>
             </div>
           </div>
           
           <div class="settings-card">
             <h3>Playback Configuration</h3>
             <p class="settings-desc">Manage player quality options and workspace settings.</p>
+            <div class="setting-toggle-row" style="margin-bottom: 20px;">
+              <div>
+                <h4>Endless AI Auto-Play Radio</h4>
+                <p class="settings-desc">Automatically fetch and queue recommended similar tracks when queue reaches the end.</p>
+              </div>
+              <label class="switch-toggle">
+                <input type="checkbox" id="setting-auto-radio" checked>
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
             <div class="setting-toggle-row" style="margin-bottom: 20px;">
               <div>
                 <h4>Show Video Container</h4>
@@ -553,6 +699,22 @@
     
     <!-- Right: Volume, mini-player panel -->
     <div class="player-right">
+      <button class="control-btn" id="ctrl-sleep" title="Sleep Timer">
+        <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2,12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm.5-13H11v6l5.2 3.2.8-1.3-4.5-2.7V7z"/></svg>
+        <span class="sleep-badge" id="sleep-badge" style="display: none;"></span>
+      </button>
+      <button class="control-btn" id="ctrl-speed" title="Playback Speed">
+        <span id="speed-lbl" style="font-size: 11px; font-weight: 800;">1x</span>
+      </button>
+      <button class="control-btn" id="player-share-btn" title="Share Song Link">
+        <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"/></svg>
+      </button>
+      <button class="control-btn" id="ctrl-radio" title="Launch Track Radio">
+        <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M3.24 6.15C2.51 6.43 2 7.17 2 8v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-.83-.51-1.57-1.24-1.85l-8-3.07a2 2 0 0 0-1.52 0l-8 3.07zM12 18c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>
+      </button>
+      <button class="control-btn" id="ctrl-eq" title="Audio Equalizer & Visualizer">
+        <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M7 18h2V6H7v12zm4 4h2V2h-2v20zm-8-8h2v-4H3v4zm12 4h2V6h-2v12zm4-8v4h2v-4h-2z"/></svg>
+      </button>
       <button class="control-btn" id="ctrl-queue" title="Queue / Lyrics">
         <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M4 6h18V4H4v2zm0 6h18v-2H4v2zm0 6h14v-2H4v2z"/></svg>
       </button>
@@ -571,12 +733,13 @@
       <!-- Minimized/Invisible Video Viewport (ad-free audio focus) -->
       <div id="video-mini-container">
         <div class="video-overlay">
-          <button id="video-expand-btn" title="Toggle video display">
-            <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M4 4h16v16H4V4zm2 2v12h12V6H6z"/></svg>
+          <button id="video-expand-btn" title="Toggle picture-in-picture mode">
+            <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M19 11h-8v6h8v-6zm4 8V5c0-1.1-.9-2-2-2H3c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2zm-2 0H3V5h18v14z"/></svg>
           </button>
-          <button id="video-fullscreen-btn" title="Fullscreen" style="margin-left: 6px;">
+          <button id="video-fullscreen-btn" title="Fullscreen">
             <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
           </button>
+          <button id="video-close-btn" title="Minimize video to bar" style="font-size: 16px; font-weight: 700; line-height: 1;">&times;</button>
         </div>
         <div id="yt-player"></div>
       </div>
@@ -679,8 +842,102 @@
           </div>
         </div>
       </div>
+  <!-- AUDIO EQUALIZER & VISUALIZER MODAL -->
+  <div id="eq-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-card" style="width: 680px; max-width: 95vw;">
+      <div class="modal-header">
+        <h3>🎛️ Audio Equalizer & Visualizer</h3>
+        <button class="modal-close" id="eq-modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 20px;">
+        
+        <!-- Canvas Visualizer Section -->
+        <div style="background: rgba(0,0,0,0.5); border-radius: 12px; padding: 12px; position: relative;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="font-size: 12px; font-weight: 700; letter-spacing: 1px; color: var(--accent-color);">DYNAMIC CANVAS VISUALIZER</span>
+            <div class="viz-mode-chips" style="display: flex; gap: 6px;">
+              <button class="chip active viz-chip" data-mode="bars">Bars</button>
+              <button class="chip viz-chip" data-mode="wave">Wave</button>
+              <button class="chip viz-chip" data-mode="pulse">Pulse</button>
+            </div>
+          </div>
+          <canvas id="visualizer-canvas" width="600" height="140" style="width: 100%; height: 140px; border-radius: 8px; background: #08080c; display: block;"></canvas>
+        </div>
+
+        <!-- EQ Controls Section -->
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <label style="font-size: 13px; font-weight: 600;">Preset:</label>
+              <select id="eq-preset-select" class="setting-select" style="padding: 4px 12px; height: 32px; font-size: 13px;">
+                <option value="flat">Flat / Default</option>
+                <option value="bass">Bass Boost</option>
+                <option value="treble">Treble Boost</option>
+                <option value="rock">Rock</option>
+                <option value="edm">EDM / Club</option>
+                <option value="vocal">Vocal Boost</option>
+                <option value="acoustic">Acoustic</option>
+              </select>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <label style="font-size: 13px; font-weight: 600;">Bass Boost:</label>
+              <input type="range" id="eq-bass-boost" min="0" max="12" value="0" style="width: 100px;">
+              <span id="eq-bass-val" style="font-size: 12px; font-family: monospace; width: 32px;">0 dB</span>
+            </div>
+          </div>
+
+          <!-- 10-Band Sliders Grid -->
+          <div id="eq-bands-container" style="display: flex; justify-content: space-between; align-items: flex-end; height: 180px; background: rgba(0,0,0,0.2); padding: 16px 12px; border-radius: 12px; border: 1px solid var(--border-color);">
+            <!-- Dynamic 10 band sliders (32Hz, 64Hz, 125Hz, 250Hz, 500Hz, 1kHz, 2kHz, 4kHz, 8kHz, 16kHz) -->
+          </div>
+        </div>
+
+      </div>
+      <div class="modal-footer" style="justify-content: space-between;">
+        <button class="action-outline-btn" id="eq-reset-btn">Reset to Flat</button>
+        <button class="btn-primary" id="eq-apply-btn" style="padding: 8px 24px;">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- JOIN COLLAB MODAL -->
+  <div id="collab-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-card" style="width: 380px;">
+      <div class="modal-header">
+        <h3>Join Collaborative Playlist</h3>
+        <button class="modal-close" id="collab-modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="collab-code-input">Enter Collaboration Code</label>
+          <input type="text" id="collab-code-input" placeholder="e.g. COL-X7Y9Z2" style="text-transform: uppercase;">
+        </div>
+      </div>
       <div class="modal-footer">
-        <button class="btn-primary" id="shortcuts-close-btn" style="padding: 10px 24px; border-radius: 8px;">Got It</button>
+        <button class="action-outline-btn" id="collab-modal-cancel">Cancel</button>
+        <button class="btn-primary" id="collab-modal-join-btn">Join Playlist</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SLEEP TIMER MODAL -->
+  <div id="sleep-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-card" style="width: 380px;">
+      <div class="modal-header">
+        <h3>⏲️ Sleep Timer</h3>
+        <button class="modal-close" id="sleep-modal-close-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px;">Stop audio playback automatically after:</p>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <button class="action-outline-btn sleep-opt-btn" data-minutes="15">15 Minutes</button>
+          <button class="action-outline-btn sleep-opt-btn" data-minutes="30">30 Minutes</button>
+          <button class="action-outline-btn sleep-opt-btn" data-minutes="45">45 Minutes</button>
+          <button class="action-outline-btn sleep-opt-btn" data-minutes="60">1 Hour</button>
+          <button class="action-outline-btn sleep-opt-btn" data-minutes="end">End of Current Track</button>
+          <button class="action-outline-btn sleep-opt-btn delete-btn" data-minutes="off" style="margin-top: 8px;">Turn Off Timer</button>
+        </div>
       </div>
     </div>
   </div>

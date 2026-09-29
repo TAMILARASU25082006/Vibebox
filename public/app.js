@@ -49,6 +49,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupSidebarTabs();
   renderSidebarPlaylists();
   renderHomeViewport();
+  setupEqualizerAndVisualizer();
+  setupSmartRadioAndAutoPlay();
+  setupRoomsAndCollab();
+  setupLocalAudioStore();
+  setupSleepTimer();
+  setupSpeedControl();
+  setupTrackShare();
+  checkUrlTrackAutoPlay();
 });
 
 // Initialize background mode for mobile app
@@ -275,15 +283,17 @@ function applySettingsAndTheme() {
   
   // Sync setting checkbox
   const showVideoCheckbox = document.getElementById('setting-show-video');
-  showVideoCheckbox.checked = library.settings.showVideo;
+  if (showVideoCheckbox) showVideoCheckbox.checked = library.settings.showVideo;
   
   const videoMini = document.getElementById('video-mini-container');
-  if (library.settings.showVideo) {
-    videoMini.style.display = 'block';
-    videoMini.classList.remove('video-hidden');
-  } else {
-    videoMini.style.display = 'block'; // Keep it block to keep the iframe rendering and playing
-    videoMini.classList.add('video-hidden');
+  if (videoMini) {
+    if (library.settings.showVideo) {
+      videoMini.style.display = 'block';
+      videoMini.classList.remove('video-hidden');
+    } else {
+      videoMini.style.display = 'block';
+      videoMini.classList.add('video-hidden');
+    }
   }
   
   // Sync quality dropdown
@@ -294,7 +304,20 @@ function applySettingsAndTheme() {
   
   // Set active class in Settings theme picker
   document.querySelectorAll('.theme-option').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.theme === theme);
+    const isCurrent = btn.dataset.theme === theme;
+    btn.classList.toggle('active', isCurrent);
+    if (isCurrent) {
+      btn.style.boxShadow = '0 0 14px var(--accent-glow)';
+    } else {
+      btn.style.boxShadow = 'none';
+    }
+
+    btn.onclick = () => {
+      const selectedTheme = btn.dataset.theme;
+      library.settings.theme = selectedTheme;
+      applySettingsAndTheme();
+      saveLibraryToStorage();
+    };
   });
 }
 
@@ -1025,10 +1048,20 @@ function setupPlayerControls() {
   });
   
   // Toggle Expand Floating Video Mini-Player
-  videoExpandBtn.addEventListener('click', () => {
+  videoExpandBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
     const videoContainer = document.getElementById('video-mini-container');
     videoContainer.classList.toggle('maximized');
   });
+
+  const videoCloseBtn = document.getElementById('video-close-btn');
+  if (videoCloseBtn) {
+    videoCloseBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const videoContainer = document.getElementById('video-mini-container');
+      videoContainer.classList.remove('maximized');
+    });
+  }
 
   // Fullscreen Cinema mode listener
   const fullscreenBtn = document.getElementById('video-fullscreen-btn');
@@ -1235,7 +1268,28 @@ function handleTrackEnded() {
       playback.player.playVideo();
     }
   } else {
-    // Play next
+    // Check if auto radio is enabled and queue is at the end
+    if (playback.currentIndex >= playback.queue.length - 1 && library.settings.autoRadio !== false) {
+      const active = getActiveTrack();
+      if (active) {
+        fetch(`${API_BASE}/api/radio?artist=${encodeURIComponent(active.artist)}&title=${encodeURIComponent(active.title)}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.results && data.results.length > 0) {
+              playback.queue.push(...data.results);
+              playback.currentIndex++;
+              const nextTrack = playback.queue[playback.currentIndex];
+              loadAndPlayVideo(nextTrack.videoId);
+              renderQueuePanel();
+              return;
+            }
+            playNextTrack();
+          })
+          .catch(() => playNextTrack());
+        return;
+      }
+    }
+    // Play next standard
     playNextTrack();
   }
 }
@@ -2526,3 +2580,868 @@ function updateDynamicHeaderGradient(song) {
     headerGradient.style.setProperty('--gradient-color', finalColor);
   });
 }
+
+// =========================================================================
+// --- FEATURE SET 1: AUDIO EQUALIZER & CANVAS VISUALIZER ---
+// =========================================================================
+
+let audioCtx = null;
+let eqFilters = [];
+let bassGainNode = null;
+let analyserNode = null;
+let visualizerAnimFrame = null;
+let currentVizMode = 'bars';
+
+const eqFrequencies = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+const eqPresets = {
+  flat: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  bass: [6, 5, 4, 2, 0, 0, 0, 0, 0, 0],
+  treble: [-2, -1, 0, 0, 1, 3, 5, 6, 7, 8],
+  rock: [4, 3, 2, 0, -1, 1, 3, 4, 4, 4],
+  edm: [5, 4, 2, 0, -2, 2, 3, 4, 5, 4],
+  vocal: [-2, -1, 1, 3, 4, 4, 3, 1, 0, -1],
+  acoustic: [3, 2, 1, 1, 2, 2, 3, 3, 2, 1]
+};
+
+function setupEqualizerAndVisualizer() {
+  const eqBtn = document.getElementById('ctrl-eq');
+  const eqModal = document.getElementById('eq-modal');
+  const closeBtn = document.getElementById('eq-modal-close-btn');
+  const applyBtn = document.getElementById('eq-apply-btn');
+  const resetBtn = document.getElementById('eq-reset-btn');
+  const presetSelect = document.getElementById('eq-preset-select');
+  const bassSlider = document.getElementById('eq-bass-boost');
+  const bassVal = document.getElementById('eq-bass-val');
+
+  if (eqBtn && eqModal) {
+    eqBtn.addEventListener('click', () => {
+      initWebAudioAPI();
+      eqModal.style.display = 'flex';
+      startCanvasVisualizer();
+    });
+
+    const closeModal = () => { eqModal.style.display = 'none'; };
+    if (closeBtn) closeBtn.addEventListener('click', closeModal);
+    if (applyBtn) applyBtn.addEventListener('click', closeModal);
+  }
+
+  renderEqualizerBands();
+
+  if (presetSelect) {
+    presetSelect.addEventListener('change', () => {
+      const presetName = presetSelect.value;
+      const values = eqPresets[presetName] || eqPresets.flat;
+      values.forEach((val, idx) => {
+        const slider = document.getElementById(`eq-slider-${idx}`);
+        const valTxt = document.getElementById(`eq-val-${idx}`);
+        if (slider) slider.value = val;
+        if (valTxt) valTxt.textContent = `${val > 0 ? '+' : ''}${val}dB`;
+        if (eqFilters[idx]) eqFilters[idx].gain.value = val;
+      });
+    });
+  }
+
+  if (bassSlider && bassVal) {
+    bassSlider.addEventListener('input', () => {
+      const val = parseFloat(bassSlider.value);
+      bassVal.textContent = `${val} dB`;
+      if (bassGainNode) bassGainNode.gain.value = 1 + (val / 6);
+    });
+  }
+
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+      if (presetSelect) presetSelect.value = 'flat';
+      const values = eqPresets.flat;
+      values.forEach((val, idx) => {
+        const slider = document.getElementById(`eq-slider-${idx}`);
+        const valTxt = document.getElementById(`eq-val-${idx}`);
+        if (slider) slider.value = 0;
+        if (valTxt) valTxt.textContent = '0dB';
+        if (eqFilters[idx]) eqFilters[idx].gain.value = 0;
+      });
+      if (bassSlider) bassSlider.value = 0;
+      if (bassVal) bassVal.textContent = '0 dB';
+      if (bassGainNode) bassGainNode.gain.value = 1;
+    });
+  }
+
+  // Viz mode chips
+  document.querySelectorAll('.viz-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.viz-chip').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentVizMode = btn.dataset.mode;
+    });
+  });
+}
+
+function initWebAudioAPI() {
+  if (audioCtx) return;
+  try {
+    const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new AudioCtxClass();
+    
+    analyserNode = audioCtx.createAnalyser();
+    analyserNode.fftSize = 128;
+
+    bassGainNode = audioCtx.createGain();
+
+    eqFilters = eqFrequencies.map((freq, idx) => {
+      const filter = audioCtx.createBiquadFilter();
+      if (idx === 0) filter.type = 'lowshelf';
+      else if (idx === eqFrequencies.length - 1) filter.type = 'highshelf';
+      else filter.type = 'peaking';
+      filter.frequency.value = freq;
+      filter.gain.value = 0;
+      return filter;
+    });
+
+    for (let i = 0; i < eqFilters.length - 1; i++) {
+      eqFilters[i].connect(eqFilters[i + 1]);
+    }
+    eqFilters[eqFilters.length - 1].connect(bassGainNode);
+    bassGainNode.connect(analyserNode);
+    analyserNode.connect(audioCtx.destination);
+  } catch (e) {
+    console.warn('Web Audio API initialized in fallback mode.');
+  }
+}
+
+function renderEqualizerBands() {
+  const container = document.getElementById('eq-bands-container');
+  if (!container) return;
+  container.innerHTML = '';
+
+  eqFrequencies.forEach((freq, idx) => {
+    const labelText = freq >= 1000 ? `${freq / 1000}k` : `${freq}`;
+    const col = document.createElement('div');
+    col.className = 'eq-band-col';
+    col.innerHTML = `
+      <span class="eq-band-val" id="eq-val-${idx}">0dB</span>
+      <input type="range" class="eq-slider-vertical" id="eq-slider-${idx}" min="-12" max="12" value="0">
+      <span class="eq-band-label">${labelText}</span>
+    `;
+
+    const slider = col.querySelector(`#eq-slider-${idx}`);
+    slider.addEventListener('input', () => {
+      const val = parseFloat(slider.value);
+      document.getElementById(`eq-val-${idx}`).textContent = `${val > 0 ? '+' : ''}${val}dB`;
+      if (eqFilters[idx]) eqFilters[idx].gain.value = val;
+    });
+
+    container.appendChild(col);
+  });
+}
+
+function startCanvasVisualizer() {
+  const canvas = document.getElementById('visualizer-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  
+  if (visualizerAnimFrame) cancelAnimationFrame(visualizerAnimFrame);
+
+  function draw() {
+    visualizerAnimFrame = requestAnimationFrame(draw);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const width = canvas.width;
+    const height = canvas.height;
+
+    if (!analyserNode || !playback.isPlaying) {
+      ctx.beginPath();
+      ctx.strokeStyle = 'rgba(29, 185, 84, 0.4)';
+      ctx.lineWidth = 2;
+      ctx.moveTo(0, height / 2);
+      ctx.lineTo(width, height / 2);
+      ctx.stroke();
+      return;
+    }
+
+    const bufferLength = analyserNode.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+
+    if (currentVizMode === 'bars') {
+      analyserNode.getByteFrequencyData(dataArray);
+      const barWidth = (width / bufferLength) * 2;
+      let x = 0;
+      for (let i = 0; i < bufferLength; i++) {
+        const barHeight = (dataArray[i] / 255) * height;
+        const gradient = ctx.createLinearGradient(0, height, 0, 0);
+        gradient.addColorStop(0, '#1DB954');
+        gradient.addColorStop(1, '#00f2fe');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(x, height - barHeight, barWidth - 2, barHeight);
+        x += barWidth;
+      }
+    } else if (currentVizMode === 'wave') {
+      analyserNode.getByteTimeDomainData(dataArray);
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = '#1DB954';
+      ctx.beginPath();
+      const sliceWidth = width / bufferLength;
+      let x = 0;
+      for (let i = 0; i < bufferLength; i++) {
+        const v = dataArray[i] / 128.0;
+        const y = (v * height) / 2;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+        x += sliceWidth;
+      }
+      ctx.lineTo(width, height / 2);
+      ctx.stroke();
+    } else if (currentVizMode === 'pulse') {
+      analyserNode.getByteFrequencyData(dataArray);
+      let avg = 0;
+      for (let i = 0; i < bufferLength; i++) avg += dataArray[i];
+      avg = avg / bufferLength;
+
+      const radius = 25 + (avg / 255) * 35;
+      ctx.beginPath();
+      ctx.arc(width / 2, height / 2, radius, 0, 2 * Math.PI);
+      ctx.fillStyle = `rgba(29, 185, 84, ${0.2 + (avg / 255) * 0.6})`;
+      ctx.shadowBlur = 20;
+      ctx.shadowColor = '#1DB954';
+      ctx.fill();
+    }
+  }
+
+  draw();
+}
+
+// =========================================================================
+// --- FEATURE SET 2: SMART AI TRACK RADIO & MOOD MIXES ---
+// =========================================================================
+
+function setupSmartRadioAndAutoPlay() {
+  const radioBtn = document.getElementById('ctrl-radio');
+  if (radioBtn) {
+    radioBtn.addEventListener('click', () => {
+      const active = getActiveTrack();
+      if (active) launchTrackRadio(active);
+      else alert('Play a track first to launch Track Radio!');
+    });
+  }
+
+  // Mood Mix Chips click listener
+  document.querySelectorAll('.mood-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mood = btn.dataset.mood;
+      launchMoodMix(mood);
+    });
+  });
+
+  // Settings auto-radio toggle listener
+  const autoRadioToggle = document.getElementById('setting-auto-radio');
+  if (autoRadioToggle) {
+    autoRadioToggle.checked = library.settings.autoRadio !== false;
+    autoRadioToggle.addEventListener('change', () => {
+      library.settings.autoRadio = autoRadioToggle.checked;
+      saveLibraryToStorage();
+    });
+  }
+}
+
+async function launchTrackRadio(song) {
+  if (!song) song = getActiveTrack();
+  if (!song) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/radio?artist=${encodeURIComponent(song.artist)}&title=${encodeURIComponent(song.title)}`);
+    const data = await res.json();
+    if (data.results && data.results.length > 0) {
+      playback.queue = [song, ...data.results];
+      playback.originalQueue = [...playback.queue];
+      playback.currentIndex = 0;
+      loadAndPlayVideo(song.videoId);
+      renderQueuePanel();
+    }
+  } catch (e) {
+    console.error('Failed to launch radio mix:', e);
+  }
+}
+
+async function launchMoodMix(mood) {
+  try {
+    const res = await fetch(`${API_BASE}/api/radio?mood=${encodeURIComponent(mood)}`);
+    const data = await res.json();
+    if (data.results && data.results.length > 0) {
+      playAllTracklist(data.results);
+    }
+  } catch (e) {
+    console.error('Failed to launch mood mix:', e);
+  }
+}
+
+// =========================================================================
+// --- FEATURE SET 3: LIVE "LISTEN TOGETHER" ROOMS & COLLAB PLAYLISTS ---
+// =========================================================================
+
+let activeRoomCode = null;
+let roomPollInterval = null;
+
+function setupRoomsAndCollab() {
+  const roomsNav = document.getElementById('nav-rooms');
+  if (roomsNav) {
+    roomsNav.addEventListener('click', (e) => {
+      e.preventDefault();
+      switchViewport('viewport-rooms');
+      document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
+      roomsNav.classList.add('active');
+    });
+  }
+
+  const createBtn = document.getElementById('create-room-submit-btn');
+  const createInput = document.getElementById('create-room-name-input');
+  if (createBtn && createInput) {
+    createBtn.addEventListener('click', () => {
+      const name = createInput.value.trim();
+      if (name) createLiveRoom(name);
+    });
+  }
+
+  const joinBtn = document.getElementById('join-room-submit-btn');
+  const joinInput = document.getElementById('join-room-code-input');
+  if (joinBtn && joinInput) {
+    joinBtn.addEventListener('click', () => {
+      const code = joinInput.value.trim();
+      if (code) joinLiveRoom(code);
+    });
+  }
+
+  const leaveBtn = document.getElementById('leave-room-btn');
+  if (leaveBtn) {
+    leaveBtn.addEventListener('click', () => {
+      leaveLiveRoom();
+    });
+  }
+
+  const chatSendBtn = document.getElementById('room-chat-send-btn');
+  const chatInput = document.getElementById('room-chat-input');
+  if (chatSendBtn && chatInput) {
+    const sendMsg = async () => {
+      const text = chatInput.value.trim();
+      if (!text || !activeRoomCode) return;
+      try {
+        await fetch(`${API_BASE}/api/rooms/${activeRoomCode}/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+          body: JSON.stringify({ text })
+        });
+        chatInput.value = '';
+      } catch (e) {}
+    };
+
+    chatSendBtn.addEventListener('click', sendMsg);
+    chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMsg(); });
+  }
+}
+
+async function createLiveRoom(name) {
+  if (!authToken) {
+    alert('Please sign in to create a live room!');
+    return;
+  }
+  try {
+    const res = await fetch(`${API_BASE}/api/rooms/create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ name })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      activeRoomCode = data.room.code;
+      renderActiveRoomUI(data.room);
+      startRoomPolling(data.room.code);
+    } else {
+      alert(data.error);
+    }
+  } catch (e) {
+    alert('Failed to create room.');
+  }
+}
+
+async function joinLiveRoom(code) {
+  if (!authToken) {
+    alert('Please sign in to join a room!');
+    return;
+  }
+  try {
+    const res = await fetch(`${API_BASE}/api/rooms/join`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+      body: JSON.stringify({ code })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      activeRoomCode = data.room.code;
+      renderActiveRoomUI(data.room);
+      startRoomPolling(data.room.code);
+    } else {
+      alert(data.error);
+    }
+  } catch (e) {
+    alert('Failed to join room.');
+  }
+}
+
+function leaveLiveRoom() {
+  if (roomPollInterval) clearInterval(roomPollInterval);
+  activeRoomCode = null;
+  document.getElementById('active-room-view').style.display = 'none';
+}
+
+function renderActiveRoomUI(room) {
+  const activeView = document.getElementById('active-room-view');
+  activeView.style.display = 'block';
+  document.getElementById('room-active-name').textContent = room.name;
+  document.getElementById('room-active-host').textContent = room.host;
+  document.getElementById('room-active-code').textContent = room.code;
+  document.getElementById('room-listener-count').textContent = room.listeners.length;
+}
+
+function startRoomPolling(code) {
+  if (roomPollInterval) clearInterval(roomPollInterval);
+  roomPollInterval = setInterval(async () => {
+    try {
+      const isHost = document.getElementById('room-active-host').textContent === loggedInUser;
+      const active = getActiveTrack();
+
+      if (isHost && active && playback.player) {
+        const currentTime = playback.player.getCurrentTime() || 0;
+        await fetch(`${API_BASE}/api/rooms/${code}/sync`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+          body: JSON.stringify({ currentTrack: active, currentTime, isPlaying: playback.isPlaying })
+        });
+      }
+
+      const res = await fetch(`${API_BASE}/api/rooms/${code}/state`);
+      if (res.ok) {
+        const data = await res.json();
+        updateRoomState(data.room, isHost);
+      }
+    } catch (e) {}
+  }, 2500);
+}
+
+function updateRoomState(room, isHost) {
+  document.getElementById('room-listener-count').textContent = room.listeners.length;
+  
+  // Render listeners
+  const listenersList = document.getElementById('room-listeners-list');
+  listenersList.innerHTML = '';
+  room.listeners.forEach(l => {
+    const chip = document.createElement('span');
+    chip.style.cssText = 'background: rgba(255,255,255,0.1); padding: 4px 10px; border-radius: 12px; font-size: 12px;';
+    chip.textContent = '👤 ' + l.username;
+    listenersList.appendChild(chip);
+  });
+
+  // Render playing box
+  const nowBox = document.getElementById('room-now-playing-box');
+  if (room.currentTrack) {
+    nowBox.innerHTML = `
+      <img src="${room.currentTrack.thumbnail}" style="width: 48px; height: 48px; border-radius: 6px; object-fit: cover;">
+      <div>
+        <div style="font-weight: 700; font-size: 14px;">${escapeHtml(room.currentTrack.title)}</div>
+        <div style="font-size: 12px; color: var(--text-secondary);">${escapeHtml(room.currentTrack.artist)}</div>
+      </div>
+    `;
+  }
+
+  // Listener sync
+  if (!isHost && room.currentTrack) {
+    const active = getActiveTrack();
+    if (!active || active.videoId !== room.currentTrack.videoId) {
+      playTrackInstant(room.currentTrack);
+    }
+    if (playback.player && room.currentTime !== undefined) {
+      const myTime = playback.player.getCurrentTime() || 0;
+      if (Math.abs(myTime - room.currentTime) > 3) {
+        playback.player.seekTo(room.currentTime, true);
+      }
+    }
+  }
+
+  // Render Chat Messages
+  const chatContainer = document.getElementById('room-chat-messages');
+  chatContainer.innerHTML = '';
+  room.messages.forEach(msg => {
+    const div = document.createElement('div');
+    div.innerHTML = `<strong style="color: var(--accent-color);">${escapeHtml(msg.username)}:</strong> ${escapeHtml(msg.text)}`;
+    chatContainer.appendChild(div);
+  });
+}
+
+// =========================================================================
+// --- FEATURE SET 4: LOCAL AUDIO FILES & INDEXEDDB OFFLINE CACHE ---
+// =========================================================================
+
+let offlineDB = null;
+let localAudioEl = null;
+
+function setupLocalAudioStore() {
+  const chipLocal = document.getElementById('chip-local');
+  if (chipLocal) {
+    chipLocal.addEventListener('click', () => {
+      switchViewport('viewport-local-files');
+      document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.chip').forEach(el => el.classList.remove('active'));
+      chipLocal.classList.add('active');
+    });
+  }
+
+  // Open IndexedDB
+  const req = indexedDB.open('vibebox_offline_db', 1);
+  req.onupgradeneeded = (e) => {
+    offlineDB = e.target.result;
+    if (!offlineDB.objectStoreNames.contains('local_tracks')) {
+      offlineDB.createObjectStore('local_tracks', { keyPath: 'id' });
+    }
+  };
+  req.onsuccess = (e) => {
+    offlineDB = e.target.result;
+    renderLocalFilesTable();
+  };
+
+  // Dropzone & File Input
+  const dropzone = document.getElementById('local-dropzone');
+  const fileInput = document.getElementById('local-file-input');
+  const browseBtn = document.getElementById('browse-local-files-btn');
+
+  if (browseBtn && fileInput) {
+    browseBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      fileInput.click();
+    });
+  }
+
+  if (fileInput) {
+    fileInput.addEventListener('change', (e) => {
+      const files = Array.from(e.target.files);
+      files.forEach(file => saveLocalTrackToDB(file));
+    });
+  }
+
+  if (dropzone) {
+    dropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropzone.classList.add('drag-over');
+    });
+
+    dropzone.addEventListener('dragleave', () => {
+      dropzone.classList.remove('drag-over');
+    });
+
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('drag-over');
+      const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('audio/') || f.name.match(/\.(mp3|wav|flac|ogg|m4a)$/i));
+      files.forEach(file => saveLocalTrackToDB(file));
+    });
+  }
+}
+
+function saveLocalTrackToDB(file) {
+  if (!offlineDB) return;
+  const trackId = 'local_' + Math.random().toString(36).substring(2, 9);
+  const track = {
+    id: trackId,
+    name: file.name.replace(/\.[^/.]+$/, ''),
+    size: (file.size / (1024 * 1024)).toFixed(2) + ' MB',
+    type: file.type || 'audio/mp3',
+    blob: file,
+    dateAdded: new Date().toLocaleDateString()
+  };
+
+  const tx = offlineDB.transaction('local_tracks', 'readwrite');
+  tx.objectStore('local_tracks').put(track);
+  tx.oncomplete = () => {
+    renderLocalFilesTable();
+  };
+}
+
+function renderLocalFilesTable() {
+  if (!offlineDB) return;
+  const tx = offlineDB.transaction('local_tracks', 'readonly');
+  const req = tx.objectStore('local_tracks').getAll();
+  req.onsuccess = () => {
+    const tracks = req.result || [];
+    const list = document.getElementById('local-songs-list');
+    const emptyState = document.getElementById('local-songs-empty-state');
+    if (!list) return;
+
+    if (tracks.length === 0) {
+      list.innerHTML = '';
+      emptyState.style.display = 'block';
+      return;
+    }
+
+    emptyState.style.display = 'none';
+    list.innerHTML = '';
+
+    tracks.forEach((track, idx) => {
+      const tr = document.createElement('tr');
+      tr.className = 'track-row';
+      tr.innerHTML = `
+        <td class="col-index">${idx + 1}</td>
+        <td class="col-title">
+          <svg viewBox="0 0 24 24" width="20" height="20" style="margin-right: 8px; color: var(--accent-color); vertical-align: middle;"><path fill="currentColor" d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+          <span style="font-weight: 700; vertical-align: middle;">${escapeHtml(track.name)}</span>
+        </td>
+        <td class="col-artist">${track.size}</td>
+        <td class="col-duration">${track.type.split('/')[1] || 'audio'}</td>
+        <td class="col-actions">
+          <button class="row-action-btn delete-local-btn" title="Delete file">
+            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+          </button>
+        </td>
+      `;
+
+      tr.addEventListener('click', (e) => {
+        if (e.target.closest('.delete-local-btn')) return;
+        playLocalAudioBlob(track);
+      });
+
+      tr.querySelector('.delete-local-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        const delTx = offlineDB.transaction('local_tracks', 'readwrite');
+        delTx.objectStore('local_tracks').delete(track.id);
+        delTx.oncomplete = () => renderLocalFilesTable();
+      });
+
+      list.appendChild(tr);
+    });
+  };
+}
+
+function playLocalAudioBlob(track) {
+  if (playback.player) {
+    playback.player.pauseVideo();
+  }
+  if (!localAudioEl) {
+    localAudioEl = new Audio();
+  }
+  const objectUrl = URL.createObjectURL(track.blob);
+  localAudioEl.src = objectUrl;
+  localAudioEl.play();
+
+  document.getElementById('player-track-info').style.visibility = 'visible';
+  document.getElementById('player-title').textContent = track.name;
+  document.getElementById('player-artist').textContent = 'Local File (' + track.size + ')';
+  document.getElementById('player-art').src = 'logo.png';
+}
+
+// =========================================================================
+// --- FEATURE SET 5: SLEEP TIMER, SPEED CONTROL & TRACK SHARE ---
+// =========================================================================
+
+let sleepTimerInterval = null;
+let sleepTargetTimestamp = null;
+let sleepMode = 'off'; // 'off', '15', '30', '45', '60', 'end'
+
+function setupSleepTimer() {
+  const sleepBtn = document.getElementById('ctrl-sleep');
+  const sleepModal = document.getElementById('sleep-modal');
+  const closeBtn = document.getElementById('sleep-modal-close-btn');
+
+  if (sleepBtn && sleepModal) {
+    sleepBtn.addEventListener('click', () => {
+      sleepModal.style.display = 'flex';
+    });
+    if (closeBtn) closeBtn.addEventListener('click', () => { sleepModal.style.display = 'none'; });
+  }
+
+  document.querySelectorAll('.sleep-opt-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.minutes;
+      setSleepTimer(mode);
+      if (sleepModal) sleepModal.style.display = 'none';
+    });
+  });
+}
+
+function setSleepTimer(mode) {
+  sleepMode = mode;
+  if (sleepTimerInterval) clearInterval(sleepTimerInterval);
+  const badge = document.getElementById('sleep-badge');
+
+  if (mode === 'off') {
+    sleepTargetTimestamp = null;
+    if (badge) badge.style.display = 'none';
+    return;
+  }
+
+  if (mode === 'end') {
+    if (badge) {
+      badge.textContent = 'END';
+      badge.style.display = 'inline';
+    }
+    return;
+  }
+
+  const minutes = parseInt(mode, 10);
+  sleepTargetTimestamp = Date.now() + (minutes * 60 * 1000);
+
+  if (badge) badge.style.display = 'inline';
+
+  sleepTimerInterval = setInterval(() => {
+    if (!sleepTargetTimestamp) return;
+    const remainingSec = Math.max(0, Math.floor((sleepTargetTimestamp - Date.now()) / 1000));
+    
+    if (badge) {
+      const m = Math.floor(remainingSec / 60);
+      const s = remainingSec % 60;
+      badge.textContent = `${m}:${s < 10 ? '0' : ''}${s}`;
+    }
+
+    if (remainingSec <= 0) {
+      clearInterval(sleepTimerInterval);
+      if (playback.player) playback.player.pauseVideo();
+      if (localAudioEl) localAudioEl.pause();
+      if (badge) badge.style.display = 'none';
+      sleepMode = 'off';
+    }
+  }, 1000);
+}
+
+// Hook sleep timer for 'end' mode into track end transition
+const origHandleTrackEnded = handleTrackEnded;
+handleTrackEnded = function() {
+  if (sleepMode === 'end') {
+    if (playback.player) playback.player.pauseVideo();
+    const badge = document.getElementById('sleep-badge');
+    if (badge) badge.style.display = 'none';
+    sleepMode = 'off';
+    return;
+  }
+  origHandleTrackEnded();
+};
+
+let availableSpeeds = [1, 1.25, 1.5, 2, 0.5, 0.75];
+let speedIndex = 0;
+
+function setupSpeedControl() {
+  const speedBtn = document.getElementById('ctrl-speed');
+  const speedLbl = document.getElementById('speed-lbl');
+
+  if (speedBtn) {
+    speedBtn.addEventListener('click', () => {
+      speedIndex = (speedIndex + 1) % availableSpeeds.length;
+      const speed = availableSpeeds[speedIndex];
+      if (speedLbl) speedLbl.textContent = `${speed}x`;
+
+      if (playback.player && playback.player.setPlaybackRate) {
+        playback.player.setPlaybackRate(speed);
+      }
+    });
+  }
+}
+
+function setupTrackShare() {
+  const shareBtn = document.getElementById('player-share-btn');
+  if (shareBtn) {
+    shareBtn.addEventListener('click', () => {
+      const active = getActiveTrack();
+      if (!active) {
+        alert('Play a song first to generate a share link!');
+        return;
+      }
+      const shareUrl = `${window.location.origin}${window.location.pathname}?track=${active.videoId}`;
+      navigator.clipboard.writeText(shareUrl).then(() => {
+        alert(`Link copied to clipboard!\n${shareUrl}`);
+      }).catch(() => {
+        alert(`Share link:\n${shareUrl}`);
+      });
+    });
+  }
+}
+
+function checkUrlTrackAutoPlay() {
+  const params = new URLSearchParams(window.location.search);
+  const trackId = params.get('track') || params.get('v');
+  if (trackId) {
+    fetch(`${API_BASE}/api/search?q=${encodeURIComponent(trackId)}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.results && data.results.length > 0) {
+          playTrackInstant(data.results[0]);
+        }
+      })
+      .catch(() => {});
+  }
+}
+
+// =========================================================================
+// --- FEATURE SET 6: GOOGLE OAUTH SSO VERIFICATION & INITIALIZATION ---
+// =========================================================================
+
+function initGoogleAuth() {
+  const container = document.getElementById('google-signin-btn-container');
+  if (!container) return;
+
+  const GOOGLE_CLIENT_ID = '912345678900-vibeboxdemo.apps.googleusercontent.com';
+
+  if (window.google && window.google.accounts && window.google.accounts.id) {
+    try {
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: handleGoogleOAuthResponse
+      });
+
+      window.google.accounts.id.renderButton(container, {
+        theme: 'outline',
+        size: 'large',
+        width: 320,
+        text: 'continue_with',
+        shape: 'pill'
+      });
+    } catch (e) {
+      console.warn('Google Identity Services client fallback mode:', e);
+    }
+  } else {
+    setTimeout(initGoogleAuth, 1000);
+  }
+}
+
+async function handleGoogleOAuthResponse(response) {
+  if (!response || !response.credential) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/google`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credential: response.credential })
+    });
+
+    const data = await res.json();
+    if (res.ok) {
+      authToken = data.token;
+      loggedInUser = data.username;
+      userAvatarUrl = data.avatar || '';
+      
+      localStorage.setItem('vibebox_token', authToken);
+      localStorage.setItem('vibebox_username', loggedInUser);
+      localStorage.setItem('vibebox_avatar', userAvatarUrl);
+
+      if (data.library) {
+        library = data.library;
+        localStorage.setItem('vibebox_library', JSON.stringify(library));
+      }
+
+      updateAuthUI();
+      applySettingsAndTheme();
+      const modal = document.getElementById('auth-modal');
+      if (modal) modal.style.display = 'none';
+
+      alert(`Welcome to VibeBox, ${loggedInUser}! Google authentication verified successfully.`);
+    } else {
+      alert(`Google Auth error: ${data.error}`);
+    }
+  } catch (err) {
+    console.error('Google Sign-In Error:', err);
+    alert('Failed to authenticate with Google. Network error.');
+  }
+}
+

@@ -20,7 +20,10 @@ const SharedPlaylistSchema = new mongoose.Schema({
   createdBy: { type: String, required: true },
   songs: [SongSchema],
   likes: { type: [String], default: [] }, // Stores usernames of users who liked it
-  comments: [CommentSchema]
+  comments: [CommentSchema],
+  isCollaborative: { type: Boolean, default: false },
+  collabCode: { type: String, default: '' },
+  collaborators: { type: [String], default: [] }
 }, {
   timestamps: true
 });

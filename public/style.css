@@ -1,5 +1,3 @@
-/* SPOTIFY WEB PLAYER SYSTEM DESIGN STYLES */
-
 :root {
   --bg-black: #000000;
   --bg-dark: #121212;
@@ -10,8 +8,12 @@
   --text-secondary: #b3b3b3;
   --text-muted: #727272;
   
-  --spotify-green: #1db954;
-  --spotify-green-hover: #1ed760;
+  --accent-color: #1db954;
+  --accent-hover: #1ed760;
+  --accent-glow: rgba(29, 185, 84, 0.35);
+
+  --spotify-green: var(--accent-color);
+  --spotify-green-hover: var(--accent-hover);
   
   --font-body: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-display: 'Montserrat', sans-serif;
@@ -23,6 +25,42 @@
   --transition-normal: 0.3s cubic-bezier(0.3, 0, 0, 1);
   
   --gradient-color: #2a2a2a;
+}
+
+html[data-theme="green"] {
+  --accent-color: #1db954;
+  --accent-hover: #1ed760;
+  --accent-glow: rgba(29, 185, 84, 0.35);
+}
+
+html[data-theme="cyan"] {
+  --accent-color: #00f2fe;
+  --accent-hover: #4facfe;
+  --accent-glow: rgba(0, 242, 254, 0.35);
+}
+
+html[data-theme="purple"] {
+  --accent-color: #a855f7;
+  --accent-hover: #c084fc;
+  --accent-glow: rgba(168, 85, 247, 0.35);
+}
+
+html[data-theme="sunset"] {
+  --accent-color: #f97316;
+  --accent-hover: #fb923c;
+  --accent-glow: rgba(249, 115, 22, 0.35);
+}
+
+html[data-theme="blue"] {
+  --accent-color: #3b82f6;
+  --accent-hover: #60a5fa;
+  --accent-glow: rgba(59, 130, 246, 0.35);
+}
+
+html[data-theme="pink"] {
+  --accent-color: #ec4899;
+  --accent-hover: #f472b6;
+  --accent-glow: rgba(236, 72, 153, 0.35);
 }
 
 /* Global Reset */
@@ -1731,3 +1769,166 @@ button {
     display: none; /* Hide volume controls on mobile to prevent clutter */
   }
 }
+
+/* --- NEW FEATURE STYLES: MOOD CHIPS, EQUALIZER & ROOMS --- */
+
+.mood-chip {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--text-main);
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  backdrop-filter: blur(8px);
+}
+
+.mood-chip:hover, .mood-chip.active {
+  background: var(--accent-color);
+  color: #000000;
+  border-color: var(--accent-color);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(29, 185, 84, 0.3);
+}
+
+/* Equalizer 10-Band Sliders */
+.eq-band-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+  flex: 1;
+}
+
+.eq-slider-vertical {
+  -webkit-appearance: slider-vertical;
+  appearance: slider-vertical;
+  writing-mode: bt-lr;
+  width: 8px;
+  flex: 1;
+  background: rgba(255, 255, 255, 0.1);
+  accent-color: var(--accent-color);
+  cursor: pointer;
+}
+
+.eq-band-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  font-family: monospace;
+}
+
+.eq-band-val {
+  font-size: 10px;
+  color: var(--accent-color);
+  font-family: monospace;
+}
+
+/* Local Dropzone Hover */
+#local-dropzone.drag-over {
+  background: rgba(29, 185, 84, 0.1) !important;
+  border-color: var(--spotify-green) !important;
+  transform: scale(1.01);
+}
+
+/* Visualizer mode selector chips */
+.viz-chip {
+  font-size: 11px !important;
+  padding: 4px 10px !important;
+  height: auto !important;
+}
+
+/* VIDEO CONTAINER & TOP-RIGHT OVERLAY FIX */
+#video-mini-container {
+  position: relative;
+  width: 90px;
+  height: 52px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000000;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  margin-left: 10px;
+  flex-shrink: 0;
+}
+
+#video-mini-container.video-hidden {
+  width: 1px;
+  height: 1px;
+  opacity: 0.01;
+  pointer-events: none;
+  margin-left: 0;
+  border: none;
+}
+
+#video-mini-container.maximized {
+  position: fixed;
+  bottom: 105px;
+  right: 24px;
+  width: 380px;
+  height: 214px;
+  z-index: 9999;
+  border-radius: 14px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.2);
+}
+
+.video-overlay {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  padding: 4px 8px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  pointer-events: auto;
+}
+
+#video-mini-container:hover .video-overlay,
+#video-mini-container.maximized .video-overlay {
+  opacity: 1;
+}
+
+.video-overlay button {
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.video-overlay button:hover {
+  background: rgba(255, 255, 255, 0.25);
+  color: var(--accent-color);
+}
+
+/* Sleep timer badge */
+.sleep-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  background: var(--accent-color);
+  color: #000;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 1px 4px;
+  border-radius: 8px;
+}
+
+

@@ -14,6 +14,7 @@ const googleClient = new OAuth2Client();
 const User = require('./models/user');
 const SharedPlaylist = require('./models/playlist');
 const Lyric = require('./models/lyric');
+const Room = require('./models/room');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -506,6 +507,229 @@ app.post('/api/lyrics/submit', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error('Lyrics save error:', err);
     res.status(500).json({ error: 'Failed to save lyrics.' });
+  }
+});
+
+// --- SMART AI TRACK RADIO & MOOD MIX ENDPOINTS ---
+
+app.get('/api/radio', async (req, res) => {
+  const { title, artist, mood } = req.query;
+  let searchQuery = 'chill music mix';
+  
+  if (mood) {
+    const moodQueries = {
+      chill: 'lofi chill beats relaxing instrumental playlist',
+      workout: 'high energy workout motivational gym music',
+      focus: 'deep focus study ambient background music',
+      retro: '80s synthwave retrowave synth pop hits',
+      party: 'club party dance hits EDM remix'
+    };
+    searchQuery = moodQueries[mood] || 'trending music mix';
+  } else if (artist || title) {
+    const cleanArtist = artist ? artist.replace(/\b(Official|Video|Audio|Topic|VEVO|HD)\b/gi, '').trim() : '';
+    const cleanTitle = title ? title.replace(/\(.*?\)|\[.*?\]/g, '').trim() : '';
+    searchQuery = `${cleanArtist} ${cleanTitle} similar audio music tracks mix`.trim();
+  }
+
+  try {
+    const results = await scrapeYouTubeSearch(searchQuery);
+    res.json({ success: true, query: searchQuery, results: results.slice(0, 15) });
+  } catch (err) {
+    console.error('Radio endpoint error:', err);
+    res.status(500).json({ error: 'Failed to generate radio mix.' });
+  }
+});
+
+// --- COLLABORATIVE PLAYLISTS ENDPOINTS ---
+
+app.post('/api/playlists/:id/collaborate', authenticateToken, async (req, res) => {
+  try {
+    const playlist = await SharedPlaylist.findById(req.params.id);
+    if (!playlist) return res.status(404).json({ error: 'Playlist not found.' });
+    if (playlist.createdBy !== req.user.username) {
+      return res.status(403).json({ error: 'Only the playlist creator can enable collaboration.' });
+    }
+
+    if (!playlist.isCollaborative) {
+      playlist.isCollaborative = true;
+      playlist.collabCode = 'COL-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+      if (!playlist.collaborators.includes(req.user.username)) {
+        playlist.collaborators.push(req.user.username);
+      }
+      await playlist.save();
+    }
+
+    res.json({ success: true, collabCode: playlist.collabCode, isCollaborative: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to enable collaboration.' });
+  }
+});
+
+app.post('/api/playlists/join-collab', authenticateToken, async (req, res) => {
+  const { code } = req.body;
+  if (!code) return res.status(400).json({ error: 'Collab code is required.' });
+
+  try {
+    const playlist = await SharedPlaylist.findOne({ collabCode: code.toUpperCase().trim() });
+    if (!playlist) return res.status(404).json({ error: 'Invalid collaboration code.' });
+
+    if (!playlist.collaborators.includes(req.user.username)) {
+      playlist.collaborators.push(req.user.username);
+      await playlist.save();
+    }
+
+    res.json({ success: true, playlist });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to join collaborative playlist.' });
+  }
+});
+
+app.post('/api/playlists/:id/add-track', authenticateToken, async (req, res) => {
+  const { song } = req.body;
+  if (!song || !song.videoId) return res.status(400).json({ error: 'Song object with videoId is required.' });
+
+  try {
+    const playlist = await SharedPlaylist.findById(req.params.id);
+    if (!playlist) return res.status(404).json({ error: 'Playlist not found.' });
+
+    const isCreator = playlist.createdBy === req.user.username;
+    const isCollab = playlist.isCollaborative && playlist.collaborators.includes(req.user.username);
+
+    if (!isCreator && !isCollab) {
+      return res.status(403).json({ error: 'You do not have permission to edit this playlist.' });
+    }
+
+    // Check duplicate
+    if (!playlist.songs.some(s => s.videoId === song.videoId)) {
+      playlist.songs.push(song);
+      await playlist.save();
+    }
+
+    res.json({ success: true, playlist });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to add track.' });
+  }
+});
+
+app.post('/api/playlists/:id/remove-track', authenticateToken, async (req, res) => {
+  const { videoId } = req.body;
+  if (!videoId) return res.status(400).json({ error: 'videoId is required.' });
+
+  try {
+    const playlist = await SharedPlaylist.findById(req.params.id);
+    if (!playlist) return res.status(404).json({ error: 'Playlist not found.' });
+
+    const isCreator = playlist.createdBy === req.user.username;
+    const isCollab = playlist.isCollaborative && playlist.collaborators.includes(req.user.username);
+
+    if (!isCreator && !isCollab) {
+      return res.status(403).json({ error: 'You do not have permission to edit this playlist.' });
+    }
+
+    playlist.songs = playlist.songs.filter(s => s.videoId !== videoId);
+    await playlist.save();
+
+    res.json({ success: true, playlist });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to remove track.' });
+  }
+});
+
+// --- LIVE "LISTEN TOGETHER" ROOMS ENDPOINTS ---
+
+app.post('/api/rooms/create', authenticateToken, async (req, res) => {
+  const { name } = req.body;
+  if (!name) return res.status(400).json({ error: 'Room name is required.' });
+
+  try {
+    const code = 'VB-' + Math.floor(100000 + Math.random() * 900000);
+    const room = new Room({
+      code,
+      name: name.trim(),
+      host: req.user.username,
+      listeners: [{ username: req.user.username }]
+    });
+
+    await room.save();
+    res.status(201).json({ success: true, room });
+  } catch (err) {
+    console.error('Room create error:', err);
+    res.status(500).json({ error: 'Failed to create room.' });
+  }
+});
+
+app.post('/api/rooms/join', authenticateToken, async (req, res) => {
+  const { code } = req.body;
+  if (!code) return res.status(400).json({ error: 'Room code is required.' });
+
+  try {
+    const room = await Room.findOne({ code: code.toUpperCase().trim() });
+    if (!room) return res.status(404).json({ error: 'Room not found.' });
+
+    if (!room.listeners.some(l => l.username === req.user.username)) {
+      room.listeners.push({ username: req.user.username });
+      await room.save();
+    }
+
+    res.json({ success: true, room });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to join room.' });
+  }
+});
+
+app.get('/api/rooms/:code/state', async (req, res) => {
+  try {
+    const room = await Room.findOne({ code: req.params.code.toUpperCase() });
+    if (!room) return res.status(404).json({ error: 'Room not found.' });
+    res.json({ success: true, room });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch room state.' });
+  }
+});
+
+app.post('/api/rooms/:code/sync', authenticateToken, async (req, res) => {
+  const { currentTrack, currentTime, isPlaying, queue } = req.body;
+
+  try {
+    const room = await Room.findOne({ code: req.params.code.toUpperCase() });
+    if (!room) return res.status(404).json({ error: 'Room not found.' });
+
+    if (room.host !== req.user.username) {
+      return res.status(403).json({ error: 'Only the room host can sync playback state.' });
+    }
+
+    if (currentTrack !== undefined) room.currentTrack = currentTrack;
+    if (currentTime !== undefined) room.currentTime = currentTime;
+    if (isPlaying !== undefined) room.isPlaying = isPlaying;
+    if (queue !== undefined) room.queue = queue;
+
+    await room.save();
+    res.json({ success: true, room });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to sync room state.' });
+  }
+});
+
+app.post('/api/rooms/:code/chat', authenticateToken, async (req, res) => {
+  const { text } = req.body;
+  if (!text || !text.trim()) return res.status(400).json({ error: 'Text is required.' });
+
+  try {
+    const room = await Room.findOne({ code: req.params.code.toUpperCase() });
+    if (!room) return res.status(404).json({ error: 'Room not found.' });
+
+    const message = { username: req.user.username, text: text.trim(), timestamp: new Date() };
+    room.messages.push(message);
+
+    // Keep max 50 recent messages
+    if (room.messages.length > 50) {
+      room.messages = room.messages.slice(-50);
+    }
+
+    await room.save();
+    res.json({ success: true, message });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to post chat message.' });
   }
 });
 
